@@ -1,8 +1,0 @@
-D:/Develop/VisualOS/build/CMakeFiles/boot_bin.dir
-D:/Develop/VisualOS/build/CMakeFiles/kernel_obj.dir
-D:/Develop/VisualOS/build/CMakeFiles/kernel_elf.dir
-D:/Develop/VisualOS/build/CMakeFiles/kernel_bin.dir
-D:/Develop/VisualOS/build/CMakeFiles/os-image.dir
-D:/Develop/VisualOS/build/CMakeFiles/run-qemu.dir
-D:/Develop/VisualOS/build/CMakeFiles/edit_cache.dir
-D:/Develop/VisualOS/build/CMakeFiles/rebuild_cache.dir
