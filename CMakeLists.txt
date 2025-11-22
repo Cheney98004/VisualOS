@@ -44,6 +44,9 @@ set(KERNEL_SRC
     ${SRC_ROOT}/core/shell.c
     ${SRC_ROOT}/core/string.c
     ${SRC_ROOT}/core/pmm.c
+    ${SRC_ROOT}/core/ide.c
+    ${SRC_ROOT}/core/fat16.c
+    ${SRC_ROOT}/core/fat16_loader.c
 )
 
 set(BOOT_BIN   ${CMAKE_BINARY_DIR}/boot.bin)

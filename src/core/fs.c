@@ -35,17 +35,6 @@ FsNode *fs_root(void) {
 
 void fs_init(void) {
     FsNode *r = fs_root();
-
-    // create default directories
-    FsNode *home = fs_mkdir(r, "home", 0);
-    FsNode *boot = fs_mkdir(r, "boot", 0);
-    FsNode *etc  = fs_mkdir(r, "etc", 0);
-
-    // create default files
-    FsNode *readme = fs_touch(r, "readme.txt");
-
-    // optional content example
-    (void)readme;
 }
 
 // -----------------------------------------------------------

@@ -3,6 +3,7 @@
 #include "input.h"
 #include "terminal.h"
 #include "pmm.h"
+#include "fat16.h"
 
 #define SHELL_BUF 128
 #define MAX_ARGS  16
@@ -164,10 +165,21 @@ static void cmd_touch(int argc, char **argv, const FsNode **cwd) {
     }
 
     for (int i = 1; i < argc; i++) {
+
+        // 1. RAMFS: 原有行為
         if (!fs_touch((FsNode*)*cwd, argv[i])) {
             terminal_error();
             terminal_printf("touch: cannot create '%s'\n", argv[i]);
             return;
+        }
+
+        // 2. FAT16: 只有在根目錄才同步
+        if (*cwd == fs_root()) {
+            if (!fat16_create_file(argv[i])) {
+                terminal_error();
+                terminal_printf("fat16: cannot create '%s'\n", argv[i]);
+                return;
+            }
         }
     }
 }
