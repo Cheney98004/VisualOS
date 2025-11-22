@@ -52,6 +52,8 @@ void kmain(void) {
     terminal_write_line("BOOT sector read OK");
     terminal_write_line("");
 
+    fat16_protect_kernel();
+
     // ----------------------------------------------------
     // Enter shell
     // ----------------------------------------------------

@@ -18,6 +18,20 @@
 // End-of-chain marker
 #define FAT16_EOC            0xFFFF
 
+// ---- Permission Flags ----
+// 可讀
+#define PERM_R 0x01
+// 可寫
+#define PERM_W 0x02
+// 可執行
+#define PERM_X 0x04
+// 隱藏
+#define PERM_H 0x08
+// 系統檔案（不可刪除）
+#define PERM_S 0x10
+// immutable（不可修改、不可刪除、不可寫）
+#define PERM_I 0x20
+
 // FAT16 BIOS Parameter Block (BPB)
 typedef struct {
     uint16_t bytesPerSector;      // 512
@@ -36,18 +50,18 @@ typedef struct {
 
 // FAT16 directory entry (32 bytes)
 typedef struct {
-    char     name[11];        // 8.3 formatted name
-    uint8_t  attr;            // attribute flags
-    uint8_t  ntReserved;
-    uint8_t  creationTenths;
+    char     name[11];
+    uint8_t  attr;
+    uint8_t  flags;     // <--- Original ntReserved
+    uint8_t  uid;       // <--- Original creationTenths
     uint16_t creationTime;
     uint16_t creationDate;
     uint16_t accessDate;
-    uint16_t clusterHigh;     // FAT32 only (0 for FAT16)
+    uint16_t clusterHigh;
     uint16_t modTime;
     uint16_t modDate;
-    uint16_t cluster;         // starting cluster
-    uint32_t size;            // file size
+    uint16_t cluster;
+    uint32_t size;
 } __attribute__((packed)) Fat16DirEntry;
 
 // ============================================================
@@ -85,5 +99,12 @@ void fat16_decode_name(char out[13], const char *name83);
 
 void fat16_get_path(char *out);
 int fat16_find_name_by_cluster(uint16_t parentCl, uint16_t targetCl, char out[13]);
+
+int fat16_get_entry(uint32_t lba, int index, Fat16DirEntry *out);
+int fat16_set_entry(uint32_t lba, int index, const Fat16DirEntry *ent);
+
+void fat16_protect_kernel();
+
+uint32_t fat16_entry_lba(uint16_t dirCluster, int entryIndex);
 
 #endif

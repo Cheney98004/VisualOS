@@ -3,6 +3,7 @@
 #include "input.h"
 #include "terminal.h"
 #include "string.h"
+#include "fat16.h"
 
 #define SHELL_BUF 128
 #define MAX_ARGS  16
@@ -57,8 +58,12 @@ static void cmd_help() {
     terminal_write_line("  clear          - Clear screen");
 }
 
-static void cmd_ls() {
-    fs_list();
+static void cmd_ls(int argc, char **argv) {
+    if (argc > 1 && str_eq(argv[1], "-l")) {
+        fs_list_long();
+    } else {
+        fs_list();
+    }
 }
 
 static void cmd_pwd() {
@@ -170,6 +175,50 @@ static void cmd_cd(int argc, char **argv) {
     }
 }
 
+static void cmd_chmod(int argc, char **argv) {
+    if (argc < 3) {
+        terminal_error();
+        terminal_write_line("chmod: usage: chmod [+rwxhsi] <file>");
+        return;
+    }
+
+    char op = argv[1][0];
+    const char *flags = argv[1] + 1;
+    const char *filename = argv[2];
+
+    Fat16DirEntry e;
+    uint32_t lba;
+    int index;
+
+    if (!fs_get_entry(filename, &e, &lba, &index)) {
+        terminal_error();
+        terminal_write("chmod: no such file: ");
+        terminal_write_line(filename);
+        return;
+    }
+
+    while (*flags) {
+        uint8_t bit = 0;
+        switch (*flags) {
+            case 'r': bit = PERM_R; break;
+            case 'w': bit = PERM_W; break;
+            case 'x': bit = PERM_X; break;
+            case 'h': bit = PERM_H; break;
+            case 's': bit = PERM_S; break;
+            case 'i': bit = PERM_I; break;
+        }
+
+        if (op == '+')
+            e.flags |= bit;
+        else
+            e.flags &= ~bit;
+
+        flags++;
+    }
+
+    fat16_set_entry(lba, index, &e);
+}
+
 // ---------------------------------------------------------
 // Prompt
 // ---------------------------------------------------------
@@ -207,7 +256,7 @@ void shell_run() {
 
         // dispatch
         if (str_eq(argv[0], "help"))         cmd_help();
-        else if (str_eq(argv[0], "ls"))      cmd_ls();
+        else if (str_eq(argv[0], "ls"))      cmd_ls(argc, argv);
         else if (str_eq(argv[0], "pwd"))     cmd_pwd();
         else if (str_eq(argv[0], "cat"))     cmd_cat(argc, argv);
         else if (str_eq(argv[0], "touch"))   cmd_touch(argc, argv);
@@ -216,6 +265,7 @@ void shell_run() {
         else if (str_eq(argv[0], "mkdir"))   cmd_mkdir(argc, argv);
         else if (str_eq(argv[0], "cd"))      cmd_cd(argc, argv);
         else if (str_eq(argv[0], "clear"))   terminal_clear();
+        else if (str_eq(argv[0], "chmod"))   cmd_chmod(argc, argv);
 
         else {
             terminal_error();

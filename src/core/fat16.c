@@ -12,6 +12,18 @@ static uint16_t fatTable[65536];     // supports up to 65536 clusters
 static uint32_t rootDirStartLBA;
 static uint32_t dataStartLBA;
 
+static int fat16_find_entry(uint16_t dirCluster,
+                            const char name83[11],
+                            uint32_t *outLBA,
+                            int *outIndex,
+                            Fat16DirEntry *outEntry);
+
+static void fat16_store_entry(uint32_t lba,
+                              int index,
+                              const Fat16DirEntry *entry);
+
+static uint16_t fat_next(uint16_t cl);
+
 // ============================================================
 //  Read sector helper
 // ============================================================
@@ -114,6 +126,27 @@ static void clear_cluster(uint16_t cl) {
     }
 }
 
+uint32_t fat16_entry_lba(uint16_t dirCluster, int entryIndex) {
+    if (dirCluster == 0) {
+        int sectorOffset = entryIndex / 16;  // 每 sector 16 entries
+        return rootDirStartLBA + sectorOffset;
+    }
+
+    int entriesPerCluster = bpb.sectorsPerCluster * 16;
+    int clusterOffset = entryIndex / entriesPerCluster;
+
+    uint16_t cl = dirCluster;
+
+    while (clusterOffset--) {
+        cl = fat_next(cl);
+        if (cl >= 0xFFF8) return 0;  // FAT chain end / invalid
+    }
+
+    int sectorInCluster = (entryIndex % entriesPerCluster) / 16;
+
+    return cluster_to_lba(cl) + sectorInCluster;
+}
+
 // ============================================================
 // Cluster chain traversal
 // ============================================================
@@ -169,15 +202,56 @@ static void save_dir_sector(uint32_t lba, const Fat16DirEntry *entries) {
     write_sector(lba, buf);
 }
 
+// Check Permissions
+int fat16_can_delete(const Fat16DirEntry *e) {
+    if (e->flags & PERM_I) return 0;   // immutable → 完全不可刪除
+    if (e->flags & PERM_S) return 0;   // system → 不允許刪除
+    return 1;
+}
+int fat16_can_write(const Fat16DirEntry *e) {
+    if (e->flags & PERM_I) return 0;
+    if (!(e->flags & PERM_W)) return 0;
+    return 1;
+}
+
+
+int fat16_get_entry(uint32_t lba, int index, Fat16DirEntry *out) {
+    Fat16DirEntry block[16];
+    load_dir_sector(lba, block);
+    *out = block[index];
+    return 1;
+}
+
+int fat16_set_entry(uint32_t lba, int index, const Fat16DirEntry *ent) {
+    fat16_store_entry(lba, index, ent);
+    return 1;
+}
+
+// Protect Kernel
+void fat16_protect_kernel() {
+
+    // 找 root 的 KERNEL.BIN
+    char name83[11];
+    fat16_format_83(name83, "KERNEL.BIN");
+
+    uint32_t lba;
+    int idx;
+    Fat16DirEntry e;
+
+    if (!fat16_find_entry(0, name83, &lba, &idx, &e))
+        return;
+
+    // 設定系統 + immutable 權限
+    e.flags |= (PERM_S | PERM_I);
+
+    fat16_set_entry(lba, idx, &e);
+}
+
 // ------------------------------------------------------------
 // Load entire directory (root or subdirectory)
 // ------------------------------------------------------------
 // dirCluster == 0  → root directory
 // dirCluster >= 2  → subdirectory in clusters
-//
-// Returns number of entries written into "out" buffer.
-// "max" = maximum entries to store.
-//
 int fat16_load_directory(uint16_t dirCluster, Fat16DirEntry *out, int max) {
     int count = 0;
 
@@ -685,6 +759,10 @@ int fat16_delete(const char *filename) {
     if (!fat16_find_entry(currentDirCluster, name83, &lba, &idx, &e))
         return 0;
 
+    if (!fat16_can_delete(&e)) {
+        return 0;
+    }
+
     if (e.cluster >= 2) {
         fat16_free_chain(e.cluster);
     }
@@ -731,6 +809,10 @@ int fat16_write_file(const char *filename, const void *data, uint32_t size) {
     Fat16DirEntry e;
     if (!fat16_find_entry(currentDirCluster, name83, &lba, &idx, &e))
         return 0;
+
+    if (!fat16_can_write(&e)) {
+        return 0;
+    }
 
     if (e.cluster >= 2) {
         fat16_free_chain(e.cluster);
