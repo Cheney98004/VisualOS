@@ -193,7 +193,22 @@ int fat16_load_directory(uint16_t dirCluster, Fat16DirEntry *out, int max) {
             load_dir_sector(lba, block);
 
             for (int j = 0; j < 16; j++) {
-                if (count < max) out[count++] = block[j];
+                uint8_t first = block[j].name[0];
+
+                if (first == 0x00) {
+                    return count;
+                }
+                // deleted
+                if (first == 0xE5)
+                    continue;
+
+                // LFN
+                if (block[j].attr == FAT16_ATTR_LFN)
+                    continue;
+
+                // valid
+                if (count < max)
+                    out[count++] = block[j];
             }
         }
         return count;
@@ -208,14 +223,27 @@ int fat16_load_directory(uint16_t dirCluster, Fat16DirEntry *out, int max) {
         Fat16DirEntry block[16];
 
         uint32_t lba = cluster_to_lba(cl);
-        for (uint8_t i = 0; i < bpb.sectorsPerCluster; i++) {
-            load_dir_sector(lba + i, block);
+
+        for (uint8_t s = 0; s < bpb.sectorsPerCluster; s++) {
+            load_dir_sector(lba + s, block);
 
             for (int j = 0; j < 16; j++) {
-                if (count < max) out[count++] = block[j];
+
+                uint8_t first = block[j].name[0];
+
+                if (first == 0x00) {
+                    return count;   // STOP EVERYTHING
+                }
+
+                if (first == 0xE5) continue;
+                if (block[j].attr == FAT16_ATTR_LFN) continue;
+
+                if (count < max)
+                    out[count++] = block[j];
             }
         }
 
+        // next cluster
         cl = fat_next(cl);
     }
 
@@ -416,8 +444,18 @@ int fat16_mkdir(const char *name) {
 int fat16_cd(const char *path) {
     // absolute -> go to root
     if (path[0] == '/') {
+        // jump to root first
         currentDirCluster = 0;
-        return 1;
+
+        // skip leading '/'
+        path++;
+
+        // empty path -> just "/"
+        if (*path == 0)
+            return 1;
+
+        // recursively cd into next component
+        return fat16_cd(path);
     }
 
     // ".."
@@ -582,6 +620,9 @@ static void fat16_free_chain(uint16_t cl) {
 }
 
 int fat16_list_dir(uint16_t dirCluster, char names[][13], int max) {
+    for (int i = 0; i < max; i++)
+        names[i][0] = '\0';
+
     Fat16DirEntry entries[256];
     int n = fat16_load_directory(dirCluster, entries, 256);
 
@@ -648,10 +689,11 @@ int fat16_delete(const char *filename) {
         fat16_free_chain(e.cluster);
     }
 
-    e.name[0] = 0xE5;
+    e.name[0] = 0xE5;   // mark deleted
     e.size = 0;
     e.cluster = 0;
     fat16_store_entry(lba, idx, &e);
+
     return 1;
 }
 

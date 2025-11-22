@@ -63,6 +63,7 @@ static void cmd_ls() {
 
 static void cmd_pwd() {
     char path[128];
+    k_memset(path, 0, sizeof(path));
     fat16_get_path(path);
     terminal_write_line(path);
 }
@@ -174,6 +175,7 @@ static void cmd_cd(int argc, char **argv) {
 // ---------------------------------------------------------
 static void render_prompt() {
     char path[128];
+    k_memset(path, 0, sizeof(path));
     fat16_get_path(path);
 
     terminal_write("visualos:");

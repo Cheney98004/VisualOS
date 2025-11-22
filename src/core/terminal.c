@@ -47,6 +47,10 @@ void terminal_set_color(uint8_t fg, uint8_t bg) {
 void terminal_init(void) {
     terminal_set_color(7, 0); // light grey on black
     terminal_clear();
+
+    for (int i = 0; i < 80 * 50; i++) {   // 50 rows worth to be safe
+        vga_buffer[i] = vga_entry(' ', term_color);
+    }
 }
 
 static void scroll_if_needed(void) {
@@ -75,6 +79,11 @@ void terminal_putc(char c) {
         term_col = 0;
         ++term_row;
         scroll_if_needed();
+
+        for (size_t x = 0; x < VGA_WIDTH; ++x) {
+            vga_buffer[term_row * VGA_WIDTH + x] = vga_entry(' ', term_color);
+        }
+
         set_cursor();
         return;
     }
