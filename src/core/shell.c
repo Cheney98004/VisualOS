@@ -2,20 +2,10 @@
 #include "fs.h"
 #include "input.h"
 #include "terminal.h"
+#include "pmm.h"
 
 #define SHELL_BUF 128
 #define MAX_ARGS  16
-
-// ---------------------------------------------------------
-// Debug Flag
-// ---------------------------------------------------------
-static int debug_enabled = 0;
-
-#define DBG_PRINT(...) \
-    do { if (debug_enabled) terminal_printf(__VA_ARGS__); } while (0)
-
-#define DBG_WRITE_LINE(...) \
-    do { if (debug_enabled) terminal_write_line(__VA_ARGS__); } while (0)
 
 // ---------------------------------------------------------
 // Basic string helpers
@@ -195,28 +185,20 @@ static void cmd_rm(int argc, char **argv, const FsNode **cwd) {
     }
 }
 
-// ---------------------------------------------------------
-// Debug command handler
-// ---------------------------------------------------------
-static void cmd_debug(int argc, char **argv, const FsNode **cwd) {
-    (void)cwd;
+/* ==========================================================
+   mem
+   顯示 PMM 目前狀態
+   ========================================================== */
+static void cmd_mem(int argc, char **argv, const FsNode **cwd) {
+    (void)cwd; (void)argc; (void)argv;
 
-    if (argc < 2) {
-        terminal_write_line("debug: missing option (on/off)");
-        return;
-    }
+    uint32_t total = pmm_total_frames() * 4; // KB
+    uint32_t used  = pmm_used_frames()  * 4; // KB
+    uint32_t free  = pmm_free_frames()  * 4;
 
-    if (str_eq(argv[1], "on")) {
-        debug_enabled = 1;
-        terminal_write_line("Debug mode: ON");
-    }
-    else if (str_eq(argv[1], "off")) {
-        debug_enabled = 0;
-        terminal_write_line("Debug mode: OFF");
-    }
-    else {
-        terminal_printf("debug: unknown option: %s\n", argv[1]);
-    }
+    terminal_printf("total: %u KB\n", total);
+    terminal_printf("used : %u KB\n", used);
+    terminal_printf("free : %u KB\n", free);
 }
 
 // ---------------------------------------------------------
@@ -236,10 +218,10 @@ static ShellCommand commands[] = {
     { "pwd",   cmd_pwd,   "pwd              - Show current working directory" },
     { "clear", cmd_clear, "clear            - Clear terminal"},
     { "echo",  cmd_echo,  "echo [args...]   - Print text" },
-    { "touch", cmd_touch, "touch <file>      - Create empty file" },
-    { "mkdir", cmd_mkdir, "mkdir [-p] <dir>  - Create directory" },
+    { "touch", cmd_touch, "touch <file>     - Create empty file" },
+    { "mkdir", cmd_mkdir, "mkdir [-p] <dir> - Create directory" },
     { "rm",    cmd_rm,    "rm <file>        - Remove file or directory" },
-    { "debug", cmd_debug, "debug on/off     - Enable or disable debug output" },
+    { "mem",   cmd_mem,   "mem              - Show memory usage" },
 };
 
 static const size_t command_count = sizeof(commands) / sizeof(commands[0]);
@@ -275,55 +257,21 @@ void shell_run(void) {
         size_t len = input_read_line(buffer, sizeof(buffer));
         if (len == 0) continue;
 
-        // Debug output -------------------------------------------------------
-        DBG_PRINT("[DBG] raw buffer (%u bytes): ", (unsigned)len);
-        if (debug_enabled) {
-            for (size_t i = 0; i < len; ++i)
-                terminal_printf("%02X ", (unsigned char)buffer[i]);
-            terminal_putc('\n');
-        }
-
-        DBG_PRINT("[DBG] raw str: '%s'\n", buffer);
-
         // Strip newline
         while (len > 0 && (buffer[len - 1] == '\n' || buffer[len - 1] == '\r'))
             buffer[--len] = '\0';
 
-        DBG_PRINT("[DBG] after strip: '%s'\n", buffer);
-
-        // Parse args ---------------------------------------------------------
+        // Parse args
         char *argv[MAX_ARGS];
         int argc = parse_args(buffer, argv, MAX_ARGS);
 
-        DBG_PRINT("[DBG] argc = %d\n", argc);
-        if (debug_enabled) {
-            for (int i = 0; i < argc; ++i)
-                terminal_printf("[DBG] argv[%d] = '%s'\n", i, argv[i]);
-        }
-
-        if (argc == 0) {
-            DBG_WRITE_LINE("[DBG] argc == 0, continue");
-            continue;
-        }
+        if (argc == 0) continue;
 
         const char *cmd = argv[0];
 
-        // Show available commands -------------------------------------------
-        DBG_WRITE_LINE("[DBG] Available commands:");
-        if (debug_enabled) {
-            for (size_t i = 0; i < command_count; ++i)
-                terminal_printf("  [%u] '%s'\n", (unsigned)i, commands[i].name);
-        }
-
-        DBG_PRINT("[DBG] comparing cmd '%s'...\n", cmd);
-
-        // Command dispatch --------------------------------------------------
         int found = 0;
         for (size_t i = 0; i < command_count; ++i) {
-            DBG_PRINT("[DBG] checking '%s' vs '%s'\n", cmd, commands[i].name);
-
             if (str_eq(cmd, commands[i].name)) {
-                DBG_PRINT("[DBG] MATCH found at index %u\n", (unsigned)i);
                 commands[i].handler(argc, argv, &cwd);
                 found = 1;
                 break;
@@ -334,7 +282,5 @@ void shell_run(void) {
             terminal_error();
             terminal_printf("Unknown command: %s\n", cmd);
         }
-
-        DBG_WRITE_LINE("[DBG] loop end");
     }
 }

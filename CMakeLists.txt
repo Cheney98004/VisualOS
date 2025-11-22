@@ -43,6 +43,7 @@ set(KERNEL_SRC
     ${SRC_ROOT}/core/input.c
     ${SRC_ROOT}/core/shell.c
     ${SRC_ROOT}/core/string.c
+    ${SRC_ROOT}/core/pmm.c
 )
 
 set(BOOT_BIN   ${CMAKE_BINARY_DIR}/boot.bin)

@@ -71,3 +71,9 @@ char keyboard_read_char(void) {
         return ch;
     }
 }
+
+void keyboard_flush_buffer(void) {
+    while (inb(0x64) & 1) {
+        inb(0x60);
+    }
+}

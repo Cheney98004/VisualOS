@@ -2,6 +2,7 @@
 #include "keyboard.h"
 #include "shell.h"
 #include "terminal.h"
+#include "pmm.h"
 
 extern uint8_t _data_vma[];
 extern uint8_t _data_lma[];
@@ -28,12 +29,15 @@ void kmain(void) {
     memory_init();
     terminal_init();
     keyboard_init();
+    keyboard_flush_buffer();
     fs_init();
 
     terminal_clear();
     terminal_write_line("VisualOS ver.0.2");
     terminal_write_line("Linux-style RAM FS + basic shell");
     terminal_write_line("");
+
+    pmm_init(32 * 1024 * 1024); 
 
     const FsNode *root = fs_root();
     terminal_write_line("Root listing:");
