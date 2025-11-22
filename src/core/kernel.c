@@ -1,10 +1,8 @@
-#include "fs.h"
+#include "terminal.h"
 #include "keyboard.h"
 #include "shell.h"
-#include "terminal.h"
-#include "pmm.h"
 #include "ide.h"
-#include "fat16_loader.h"
+#include "fat16.h"
 
 extern uint8_t _data_vma[];
 extern uint8_t _data_lma[];
@@ -12,15 +10,13 @@ extern uint8_t _edata[];
 extern uint8_t _bss_start[];
 extern uint8_t _bss_end[];
 
-void memory_init() {
+static void memory_init() {
     uint8_t *src = _data_lma;
     uint8_t *dst = _data_vma;
 
-    /* copy .data */
     while (dst < _edata)
         *dst++ = *src++;
 
-    /* clear .bss */
     dst = _bss_start;
     while (dst < _bss_end)
         *dst++ = 0;
@@ -32,24 +28,34 @@ void kmain(void) {
     terminal_init();
     keyboard_init();
     keyboard_flush_buffer();
-    fs_init();
-    fat16_load_root();
 
     terminal_clear();
-    terminal_write_line("VisualOS ver.0.2");
-    terminal_write_line("Linux-style RAM FS + basic shell");
+    terminal_write_line("VisualOS v0.3 (FAT16 Mode)");
     terminal_write_line("");
 
-    pmm_init(32 * 1024 * 1024); 
+    // ----------------------------------------------------
+    // Initialize disk and FAT16
+    // ----------------------------------------------------
+    if (!fat16_init()) {
+        terminal_write_line("FATAL: FAT16 init failed!");
+        for(;;);
+    }
 
+    terminal_write_line("FAT16 filesystem ready");
+    terminal_write_line("");
+
+    // ----------------------------------------------------
+    // Test reading sector 0
+    // ----------------------------------------------------
     uint8_t buf[512];
     ide_read_sector(0, buf);
-    terminal_write_line("Read sector 0 OK");
-
-    const FsNode *root = fs_root();
-    terminal_write_line("Root listing:");
-    fs_list(root);
+    terminal_write_line("BOOT sector read OK");
     terminal_write_line("");
 
+    // ----------------------------------------------------
+    // Enter shell
+    // ----------------------------------------------------
     shell_run();
+
+    for(;;);
 }

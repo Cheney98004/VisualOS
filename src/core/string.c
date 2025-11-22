@@ -1,5 +1,6 @@
 #include "string.h"
 #include <stdarg.h>
+#include <stdint.h>
 
 void *k_memcpy(void *dst, const void *src, size_t n) {
     unsigned char *d = dst;
@@ -138,4 +139,23 @@ int k_snprintf(char *buf, size_t size, const char *fmt, ...)
     buf[pos] = 0;
     va_end(ap);
     return pos;
+}
+
+int k_memcmp(const void *a, const void *b, uint32_t n) {
+    const uint8_t *p1 = (const uint8_t*)a;
+    const uint8_t *p2 = (const uint8_t*)b;
+
+    for (uint32_t i = 0; i < n; i++) {
+        if (p1[i] != p2[i])
+            return (int)p1[i] - (int)p2[i];
+    }
+    return 0;
+}
+
+char *k_strchr(const char *s, int c) {
+    while (*s) {
+        if (*s == c) return (char*)s;
+        s++;
+    }
+    return 0;
 }
