@@ -1,8 +1,45 @@
-; Minimal 16-bit boot sector that switches to 32-bit protected mode and jumps to the kernel
-; Assembles with: nasm -f bin boot.asm -o boot.bin
-
 [BITS 16]
 [ORG 0x7C00]
+
+%define BPS            512
+%define ROOT_SECTS     14
+%define ROOT_START     19
+%define DATA_START     33
+
+%define KERNEL_LOAD_SEG 0x1000
+%define KERNEL_ENTRY    0x10000
+
+jmp short start
+nop
+
+; ==========================
+; BIOS Parameter Block (BPB)
+; ==========================
+
+OEMLabel        db "MSWIN4.1"
+BPB_BytsPerSec  dw 512
+BPB_SecPerClus  db 1
+BPB_RsvdSecCnt  dw 1
+BPB_NumFATs     db 2
+BPB_RootEntCnt  dw 224
+BPB_TotSec16    dw 2880
+BPB_Media       db 0xF0
+BPB_FATSz16     dw 9
+BPB_SecPerTrk   dw 18
+BPB_NumHeads    dw 2
+BPB_HiddSec     dd 0
+BPB_TotSec32    dd 0
+
+BS_DrvNum       db 0
+BS_Reserved1    db 0
+BS_BootSig      db 0x29
+BS_VolID        dd 0x12345678
+BS_VolLab       db "NO NAME    "
+BS_FilSysType   db "FAT16   "
+
+; ==========================
+; Code starts here
+; ==========================
 
 start:
     cli
@@ -11,87 +48,183 @@ start:
     mov es, ax
     mov ss, ax
     mov sp, 0x7C00
+    sti
 
-    mov [BOOT_DRIVE], dl          ; Preserve BIOS boot drive
+    mov [boot_drive], dl
 
-    mov si, msg
-    call puts
+    ; Load root directory
+    mov bx, buffer
+    mov cx, ROOT_START
+    mov si, ROOT_SECTS
 
-    ; Load kernel from sector 2 onward into 0x10000 (ES:BX = 0x1000:0)
-    mov bx, 0x1000
-    mov es, bx
+load_root:
+    push cx
+    push si
+    call read_sector
+    pop si
+    pop cx
+
+    add bx, BPS
+    inc cx
+    dec si
+    jnz load_root
+
+    ; Search for KERNEL.BIN
+    mov si, buffer
+    mov cx, 224
+
+search_loop:
+    cmp byte [si], 0
+    je fail
+
+    cmp byte [si+11], 0x0F
+    je skip
+
+    push si
+    mov di, kernel_name
+    mov dx, 11
+    mov cx, dx
+    repe cmpsb
+    pop si
+
+    je found
+
+skip:
+    add si, 32
+    loop search_loop
+    jmp fail
+
+; ==========================
+; Kernel found
+; ==========================
+
+found:
+    mov ax, [si+26] ; first cluster
+    mov [cluster], ax
+
+    mov eax, [si+28]
+    add eax, 511
+    shr eax, 9
+    mov [ksect], ax
+
+    mov ax, KERNEL_LOAD_SEG
+    mov es, ax
     xor bx, bx
-    mov ah, 0x02                  ; BIOS: read sectors
-    mov al, 20                    ; sectors to read (adjust if kernel grows)
-    mov ch, 0
-    mov cl, 2                     ; start reading at LBA 1 -> CHS sector 2
-    mov dh, 0
-    mov dl, [BOOT_DRIVE]
-    int 0x13
-    jc disk_error
 
-    ; Enable A20
+    mov ax, [cluster]
+    mov cx, [ksect]
+
+load_kernel:
+    push ax
+    push cx
+
+    mov dx, ax
+    sub dx, 2
+    mov ax, DATA_START
+    add ax, dx
+    mov cx, ax
+
+    call read_sector
+
+    add bx, BPS
+    pop cx
+    pop ax
+
+    inc ax
+    loop load_kernel
+
+; ==========================
+; Enter protected mode
+; ==========================
+
+    cli
     in al, 0x92
-    or al, 00000010b
+    or al, 2
     out 0x92, al
 
-    ; Load GDT and enter protected mode
-    lgdt [gdt_descriptor]
+    lgdt [gdt_desc]
+
     mov eax, cr0
     or eax, 1
     mov cr0, eax
-    jmp CODE_SEL:pm_entry
 
-; Print zero-terminated string at DS:SI using BIOS teletype
-puts:
-    lodsb
-    or al, al
-    jz .done
-    mov ah, 0x0E
-    mov bx, 0x0007
-    int 0x10
-    jmp puts
-.done:
-    ret
+    jmp 0x08:protected
 
-disk_error:
-    mov si, disk_msg
-    call puts
-    cli
-    hlt
+; ==========================
+; Protected mode
+; ==========================
 
 [BITS 32]
-pm_entry:
-    mov ax, DATA_SEL
+protected:
+    mov ax, 0x10
     mov ds, ax
     mov es, ax
-    mov fs, ax
-    mov gs, ax
     mov ss, ax
     mov esp, 0x90000
 
-    jmp dword CODE_SEL:KERNEL_ENTRY
+    jmp 0x08:KERNEL_ENTRY
 
-; -------------------------------
-; Data and tables
-; -------------------------------
-ALIGN 8
+; ==========================
+; Data
+; ==========================
+
+[BITS 16]
+
+boot_drive  db 0
+cluster     dw 0
+ksect       dw 0
+kernel_name db "KERNEL  BIN"
+
+buffer equ 0x0500
+
+dap:
+    db 0x10, 0
+    dw 1, 0, 0
+    dd 0
+    dd 0
+
+; ==========================
+; Disk read (INT 13h EXT)
+; ==========================
+
+read_sector:
+    pusha
+
+    mov byte [dap], 0x10
+    mov word [dap+4], bx
+    mov word [dap+6], es
+    mov dword [dap+8], ecx
+    mov dword [dap+12], 0
+
+    mov dl, [boot_drive]
+    mov si, dap
+    mov ah, 0x42
+    int 0x13
+
+    popa
+    ret
+
+; ==========================
+; Fail handler
+; ==========================
+
+fail:
+    cli
+    hlt
+    jmp $
+
+; ==========================
+; GDT
+; ==========================
+
 gdt:
-    dq 0                        ; Null descriptor
-    dq 0x00CF9A000000FFFF       ; Code segment
-    dq 0x00CF92000000FFFF       ; Data segment
+    dq 0
+    dq 0x00CF9A000000FFFF
+    dq 0x00CF92000000FFFF
 
-gdt_descriptor:
-    dw gdt_descriptor - gdt - 1
+gdt_desc:
+    dw gdt_desc - gdt - 1
     dd gdt
-
-msg db "Booting VisualOS...", 0
-disk_msg db "Disk error", 0
-BOOT_DRIVE db 0
-
-CODE_SEL equ gdt + 8 - gdt      ; 0x08
-DATA_SEL equ gdt + 16 - gdt     ; 0x10
-KERNEL_ENTRY equ 0x0010000
 
 times 510-($-$$) db 0
 dw 0xAA55

@@ -59,12 +59,11 @@ add_custom_command(
     OUTPUT ${BOOT_BIN}
     COMMAND ${NASM_EXE} -f bin ${BOOT_SRC} -o ${BOOT_BIN}
     DEPENDS ${BOOT_SRC}
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT "Generating boot.bin"
-    VERBATIM
 )
 
-add_custom_target(boot_bin ALL DEPENDS ${BOOT_BIN})
+# 每次都重新 build boot.bin
+add_custom_target(force_boot ALL DEPENDS ${BOOT_BIN})
 
 
 #
@@ -131,7 +130,7 @@ add_custom_target(kernel_bin ALL DEPENDS ${KERNEL_BIN})
 add_custom_command(
     OUTPUT ${OS_IMG}
     DEPENDS ${BOOT_BIN} ${KERNEL_BIN}
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}
+    COMMAND ${CMAKE_COMMAND} -E rm -f ${OS_IMG}
     COMMAND powershell -ExecutionPolicy Bypass -NoProfile
             -File "${CMAKE_SOURCE_DIR}/scripts/make_image.ps1"
             "${BOOT_BIN}" "${KERNEL_BIN}" "${OS_IMG}"

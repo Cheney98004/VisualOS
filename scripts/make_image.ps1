@@ -4,37 +4,19 @@ param(
     [Parameter(Mandatory = $true)][string]$OutputImg
 )
 
-function Assert-PathExists {
-    param([string]$Path)
-    if (-not (Test-Path $Path)) {
-        throw "File not found: $Path"
-    }
+if (-not (Test-Path $BootBin)) { throw "Boot bin not found: $BootBin" }
+if (-not (Test-Path $KernelBin)) { throw "Kernel bin not found: $KernelBin" }
+
+$repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+$scriptPath = Join-Path $repoRoot "fat16.py"
+if (-not (Test-Path $scriptPath)) {
+    throw "fat16.py not found at $scriptPath"
 }
 
-Assert-PathExists -Path $BootBin
-Assert-PathExists -Path $KernelBin
-
-$diskSize = 1474560      # 1.44MB floppy
-$sectorSize = 512
-
-# Create/overwrite the image with zeros
-$bytes = New-Object byte[] ($diskSize)
-[System.IO.File]::WriteAllBytes($OutputImg, $bytes)
-
-$fs = [System.IO.File]::Open($OutputImg, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite)
-
-# Write boot sector
-$boot = [System.IO.File]::ReadAllBytes($BootBin)
-if ($boot.Length -ne $sectorSize) {
-    $fs.Dispose()
-    throw "Boot sector must be exactly 512 bytes (got $($boot.Length))"
+Write-Host "Building FAT16 image via fat16.py"
+& python "$scriptPath" "$BootBin" "$KernelBin" "$OutputImg"
+if ($LASTEXITCODE -ne 0) {
+    throw "fat16.py failed with exit code $LASTEXITCODE"
 }
-$fs.Write($boot, 0, $boot.Length)
 
-# Write kernel starting at sector 2 (offset 512)
-$kernel = [System.IO.File]::ReadAllBytes($KernelBin)
-$fs.Position = $sectorSize
-$fs.Write($kernel, 0, $kernel.Length)
-
-$fs.Dispose()
-Write-Host "Created image: $OutputImg (kernel size: $($kernel.Length) bytes)"
+Write-Host "Created FAT16 image: $OutputImg"
