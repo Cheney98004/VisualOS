@@ -62,7 +62,9 @@ static void cmd_ls() {
 }
 
 static void cmd_pwd() {
-    terminal_write_line("/");
+    char path[128];
+    fat16_get_path(path);
+    terminal_write_line(path);
 }
 
 static void cmd_cat(int argc, char **argv) {
@@ -137,11 +139,46 @@ static void cmd_write(int argc, char **argv) {
     }
 }
 
+static void cmd_mkdir(int argc, char **argv) {
+    if (argc < 2) {
+        terminal_error();
+        terminal_write_line("mkdir: missing operand");
+        return;
+    }
+
+    if (!fs_mkdir(argv[1])) {
+        terminal_error();
+        terminal_write("mkdir: cannot create ");
+        terminal_write(argv[1]);
+        terminal_putc('\n');
+    }
+}
+
+static void cmd_cd(int argc, char **argv) {
+    if (argc < 2) {
+        terminal_error();
+        terminal_write_line("cd: missing directory");
+        return;
+    }
+
+    if (!fs_cd(argv[1])) {
+        terminal_error();
+        terminal_write("cd: no such directory: ");
+        terminal_write(argv[1]);
+        terminal_putc('\n');
+    }
+}
+
 // ---------------------------------------------------------
 // Prompt
 // ---------------------------------------------------------
 static void render_prompt() {
-    terminal_write("visualos:/ $ ");
+    char path[128];
+    fat16_get_path(path);
+
+    terminal_write("visualos:");
+    terminal_write(path);
+    terminal_write(" $ ");
 }
 
 // ---------------------------------------------------------
@@ -174,6 +211,8 @@ void shell_run() {
         else if (str_eq(argv[0], "touch"))   cmd_touch(argc, argv);
         else if (str_eq(argv[0], "rm"))      cmd_rm(argc, argv);
         else if (str_eq(argv[0], "write"))   cmd_write(argc, argv);
+        else if (str_eq(argv[0], "mkdir"))   cmd_mkdir(argc, argv);
+        else if (str_eq(argv[0], "cd"))      cmd_cd(argc, argv);
         else if (str_eq(argv[0], "clear"))   terminal_clear();
 
         else {

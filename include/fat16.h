@@ -1,137 +1,89 @@
-#ifndef VISUALOS_FAT16_H
-#define VISUALOS_FAT16_H
+#ifndef FAT16_H
+#define FAT16_H
 
 #include <stdint.h>
 
-/* ============================================================================
-   FAT16 BIOS Parameter Block (BPB)
-   Read directly from LBA 0 (boot sector)
-   ============================================================================
-*/
-#pragma pack(push, 1)
-typedef struct {
-    uint8_t     jmp[3];
-    char        oem[8];
-    uint16_t    bytesPerSector;     // Usually 512
-    uint8_t     sectorsPerCluster;  // Usually 1 for 1.44MB
-    uint16_t    reservedSectors;    // Usually 1 (boot sector)
-    uint8_t     fatCount;           // Usually 2
-    uint16_t    rootEntryCount;     // Usually 224
-    uint16_t    totalSectors16;     // 2880 for 1.44MB
-    uint8_t     mediaDescriptor;    // F0 for floppy
-    uint16_t    fatSize;            // FAT size in sectors (usually 9)
-    uint16_t    sectorsPerTrack;
-    uint16_t    headCount;
-    uint32_t    hiddenSectors;
-    uint32_t    totalSectors32;
+#define FAT16_SECTOR_SIZE    512
+#define FAT16_MAX_FILENAME   12     // "XXXXXXXX.XXX\0"
 
-    uint8_t     driveNumber;
-    uint8_t     reserved;
-    uint8_t     bootSignature;
-    uint32_t    volumeID;
-    char        volumeLabel[11];
-    char        fileSystemType[8];
-} Fat16BPB;
-#pragma pack(pop)
-
-/* ============================================================================
-   Directory Entry (32 bytes)
-   ============================================================================
-*/
-#pragma pack(push, 1)
-typedef struct {
-    char        name[11];       // 8.3 name
-    uint8_t     attr;           // Attributes
-    uint8_t     ntReserved;
-    uint8_t     creationTenths;
-    uint16_t    creationTime;
-    uint16_t    creationDate;
-    uint16_t    lastAccessDate;
-    uint16_t    clusterHigh;    // Always 0 for FAT16
-    uint16_t    writeTime;
-    uint16_t    writeDate;
-    uint16_t    clusterLow;     // First cluster
-    uint32_t    fileSize;       // File size in bytes
-} Fat16DirEntry;
-#pragma pack(pop)
-
-/* ============================================================================
-   FAT16 constants
-   ============================================================================
-*/
-#define FAT16_SECTOR_SIZE 512
-#define FAT16_MAX_NAME    11
-
-/* FAT attribute bits */
+// FAT attributes
 #define FAT16_ATTR_READONLY  0x01
 #define FAT16_ATTR_HIDDEN    0x02
 #define FAT16_ATTR_SYSTEM    0x04
 #define FAT16_ATTR_VOLUMEID  0x08
 #define FAT16_ATTR_DIRECTORY 0x10
 #define FAT16_ATTR_ARCHIVE   0x20
-#define FAT16_ATTR_LFN       0x0F   // Long File Name entry
+#define FAT16_ATTR_LFN       0x0F   // long filename entry
 
-/* ============================================================================
-   Global state (initialized by fat16_init)
-   ============================================================================
-*/
-extern Fat16BPB bpb;  
-extern uint32_t fatStart;     
-extern uint32_t rootStart;    
-extern uint32_t dataStart;    
-extern uint32_t rootEntryCount;
-extern uint32_t rootDirSectors;
+// End-of-chain marker
+#define FAT16_EOC            0xFFFF
 
-/* ============================================================================
-   Core FAT16 API
-   ============================================================================
-*/
+// FAT16 BIOS Parameter Block (BPB)
+typedef struct {
+    uint16_t bytesPerSector;      // 512
+    uint8_t  sectorsPerCluster;   // typically 1
+    uint16_t reservedSectors;     // Boot sector count
+    uint8_t  fatCount;            // usually 2
+    uint16_t rootEntryCount;      // 224 for FAT12, 512 for FAT16
+    uint16_t totalSectors16;
+    uint8_t  mediaType;
+    uint16_t fatSize16;           // FAT size (in sectors)
+    uint16_t sectorsPerTrack;
+    uint16_t numHeads;
+    uint32_t hiddenSectors;
+    uint32_t totalSectors32;
+} __attribute__((packed)) Fat16BPB;
 
-/* Initialize FAT16 (read BPB, FAT, Root info) */
+// FAT16 directory entry (32 bytes)
+typedef struct {
+    char     name[11];        // 8.3 formatted name
+    uint8_t  attr;            // attribute flags
+    uint8_t  ntReserved;
+    uint8_t  creationTenths;
+    uint16_t creationTime;
+    uint16_t creationDate;
+    uint16_t accessDate;
+    uint16_t clusterHigh;     // FAT32 only (0 for FAT16)
+    uint16_t modTime;
+    uint16_t modDate;
+    uint16_t cluster;         // starting cluster
+    uint32_t size;            // file size
+} __attribute__((packed)) Fat16DirEntry;
+
+// ============================================================
+// Public API
+// ============================================================
+
 int fat16_init();
 
-/* List a directory (root or subdirectory) */
-int fat16_list_dir(uint32_t dirCluster, char names[][13], int max);
+// directory handling
+void fat16_list_directory(uint16_t dirCluster);
+int  fat16_find_in_directory(uint16_t dirCluster, const char *name);
+int  fat16_load_directory(uint16_t dirCluster, Fat16DirEntry *out, int max);
+int  fat16_list_dir(uint16_t dirCluster, char names[][13], int max);
+int  fat16_find_in_dir(uint16_t dirCluster, const char *name);
 
-/* Find directory entry inside a directory */
-int fat16_find_in_dir(uint32_t dirCluster, const char *name83);
+// file operations
+int      fat16_write_file(const char *filename, const void *data, uint32_t size);
+uint32_t fat16_read_file(const char *filename, void *buffer, uint32_t maxSize);
+int      fat16_create_file(const char *filename);
+int      fat16_delete(const char *filename);
 
-/* Create a file in root directory (temp restriction) */
-int fat16_create_file(const char *filename);
-
-/* Create directory */
+// directory create / delete
 int fat16_mkdir(const char *name);
+int fat16_delete_file(const char *name);
+int fat16_create_directory(const char *name);
 
-/* Delete file */
-int fat16_delete(const char *filename);
+// change directory
+int      fat16_cd(const char *path);
+uint16_t fat16_get_cwd();
+void     fat16_set_cwd(uint16_t cl);
 
-/* Read a file fully into buffer */
-uint32_t fat16_read_file(const char *name, void *buffer, uint32_t maxSize);
-
-/* Write to a file (overwrite) */
-int fat16_write_file(const char *name, const void *buffer, uint32_t size);
-
-/* ============================================================================
-   Helpers
-   ============================================================================
-*/
-
-/* Convert normal string → 8.3 name */
+// name helpers
 void fat16_format_83(char out[11], const char *name);
+void fat16_decode_name(char out[13], const char *name83);
 
-/* Cluster allocation helpers */
-uint16_t fat16_alloc_cluster();
-uint16_t fat16_get_fat(uint16_t cluster);
-void     fat16_set_fat(uint16_t cluster, uint16_t value);
-
-/* Sync FAT to disk */
-void fat16_flush_fat();
-
-/* Sync root directory */
-void fat16_flush_root();
-
-/* Read/write sector helpers */
-void fat16_read_sector(uint32_t lba, void *buf);
-void fat16_write_sector(uint32_t lba, const void *buf);
+void fat16_get_path(char *out);
+int fat16_find_name_by_cluster(uint16_t parentCl, uint16_t targetCl, char out[13]);
 
 #endif
