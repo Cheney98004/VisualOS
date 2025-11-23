@@ -3,6 +3,7 @@
 #include "shell.h"
 #include "ide.h"
 #include "fat16.h"
+#include "syscall.h"
 
 extern uint8_t _data_vma[];
 extern uint8_t _data_lma[];
@@ -28,6 +29,8 @@ void kmain(void) {
     terminal_init();
     keyboard_init();
     keyboard_flush_buffer();
+
+    syscall_init();
 
     terminal_clear();
     terminal_write_line("VisualOS v0.4 (FAT16 Mode)");

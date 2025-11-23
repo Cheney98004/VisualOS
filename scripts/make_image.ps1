@@ -1,40 +1,43 @@
-param(
-    [Parameter(Mandatory = $true)][string]$BootBin,
-    [Parameter(Mandatory = $true)][string]$KernelBin,
-    [Parameter(Mandatory = $true)][string]$AppElf,
-    [Parameter(Mandatory = $true)][string]$OutputImg
-)
+# ================================================
+#   VisualOS - FAT16 image builder (No parameters)
+# ================================================
 
-if (-not (Test-Path $BootBin)) { throw "Boot bin not found: $BootBin" }
-if (-not (Test-Path $KernelBin)) { throw "Kernel bin not found: $KernelBin" }
-if (-not (Test-Path $AppElf))    { throw "App ELF not found: $AppElf" }
+$repoRoot  = Resolve-Path (Join-Path $PSScriptRoot "..")
+$buildDir  = Join-Path $repoRoot "build"
 
-# repo root
-$repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+$BootBin   = Join-Path $buildDir "boot.bin"
+$KernelBin = Join-Path $buildDir "kernel.bin"
+$SnakeElf  = Join-Path $buildDir "snake.elf"
+$TestElf   = Join-Path $buildDir "test.elf"
+$OutputImg = Join-Path $buildDir "os.img"
+$HelpTxt   = Join-Path $repoRoot "res/help.txt"
+$PythonScript = Join-Path $repoRoot "fat16.py"
 
-# fat16 builder script
-$scriptPath = Join-Path $repoRoot "fat16.py"
-if (-not (Test-Path $scriptPath)) {
-    throw "fat16.py not found at $scriptPath"
+Write-Host "===== VisualOS Image Builder ====="
+Write-Host "Boot     = $BootBin"
+Write-Host "Kernel   = $KernelBin"
+Write-Host "Snake    = $SnakeElf"
+Write-Host "Test     = $TestElf"
+Write-Host "Help.txt = $HelpTxt"
+Write-Host "Output   = $OutputImg"
+
+# Remove old image
+if (Test-Path $OutputImg) {
+    Remove-Item $OutputImg -Force
 }
 
-# locate help.txt
-$helpPath = Join-Path $repoRoot "res/help.txt"
-if (-not (Test-Path $helpPath)) {
-    throw "help.txt not found at $helpPath"
-}
+# ⚠ 不能在 --% 之後使用變數！
+# 因此組成完整的命令字串，給 PowerShell Invoke-Expression 執行
+$cmd = "python --% ""$PythonScript"" ""$BootBin"" ""$KernelBin"" ""$HelpTxt"" ""$SnakeElf"" ""$TestElf"" ""$OutputImg"""
 
-Write-Host "Building FAT16 image via fat16.py"
-Write-Host "  Boot     = $BootBin"
-Write-Host "  Kernel   = $KernelBin"
-Write-Host "  App ELF  = $AppElf"
-Write-Host "  Help.txt = $helpPath"
-Write-Host "  Output   = $OutputImg"
+Write-Host "Running:"
+Write-Host "  $cmd"
+Write-Host ""
 
-& python "$scriptPath" "$BootBin" "$KernelBin" "$helpPath" "$AppElf" "$OutputImg"
+Invoke-Expression $cmd
 
 if ($LASTEXITCODE -ne 0) {
-    throw "fat16.py failed with exit code $LASTEXITCODE"
+    throw "fat16.py failed: exit code $LASTEXITCODE"
 }
 
-Write-Host "Created FAT16 image: $OutputImg"
+Write-Host "===== Done: FAT16 image created successfully ====="

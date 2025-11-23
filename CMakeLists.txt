@@ -45,11 +45,15 @@ set(KERNEL_SRC
     ${SRC_ROOT}/core/ide.c
     ${SRC_ROOT}/core/fat16.c
     ${SRC_ROOT}/core/elf_loader.c
+    ${SRC_ROOT}/core/syscall.c
 )
 
 # --- User apps ---
-set(HELLO_SRC ${SRC_ROOT}/apps/hello/hello.c)
-set(HELLO_ELF ${CMAKE_BINARY_DIR}/hello.elf)
+set(SNAKE_SRC ${SRC_ROOT}/apps/snake/snake.c)
+set(SNAKE_ELF ${CMAKE_BINARY_DIR}/snake.elf)
+
+set(TEST_SRC ${SRC_ROOT}/apps/test/test.c)
+set(TEST_ELF ${CMAKE_BINARY_DIR}/test.elf)
 
 set(BOOT_BIN   ${CMAKE_BINARY_DIR}/boot.bin)
 set(KERNEL_ELF ${CMAKE_BINARY_DIR}/kernel.elf)
@@ -116,7 +120,7 @@ add_custom_target(kernel_elf ALL DEPENDS ${KERNEL_ELF})
 
 
 #
-# --- 6. Strip ELF → raw binary kernel ---
+# --- 6. Strip ELF → flat binary kernel ---
 #
 add_custom_command(
     OUTPUT ${KERNEL_BIN}
@@ -128,36 +132,61 @@ add_custom_target(kernel_bin ALL DEPENDS ${KERNEL_BIN})
 
 
 #
-# --- Build hello.elf user program ---
+# --- Build snake.elf user program ---
 #
-# --- Build hello.o ---
 add_custom_command(
-    OUTPUT ${CMAKE_BINARY_DIR}/hello.o
+    OUTPUT ${CMAKE_BINARY_DIR}/snake.o
     COMMAND ${CMAKE_C_COMPILER}
             -m32 -ffreestanding -fno-pic -fno-stack-protector
             -nostdlib -nostartfiles -nodefaultlibs
             -I${CMAKE_SOURCE_DIR}/include
-            -c ${HELLO_SRC}
-            -o ${CMAKE_BINARY_DIR}/hello.o
-    DEPENDS ${HELLO_SRC}
-    COMMENT "Compiling hello.c -> hello.o"
+            -c ${SNAKE_SRC}
+            -o ${CMAKE_BINARY_DIR}/snake.o
+    DEPENDS ${SNAKE_SRC}
+    COMMENT "Compiling snake.c -> snake.o"
 )
+add_custom_target(snake_obj ALL DEPENDS ${CMAKE_BINARY_DIR}/snake.o)
 
-add_custom_target(hello_obj ALL DEPENDS ${CMAKE_BINARY_DIR}/hello.o)
-
-# --- Link hello.elf ---
 add_custom_command(
-    OUTPUT ${HELLO_ELF}
+    OUTPUT ${SNAKE_ELF}
     COMMAND ${LD_EXE}
             -m elf_i386
-            -T ${SRC_ROOT}/apps/hello/hello.ld
-            ${CMAKE_BINARY_DIR}/hello.o
-            -o ${HELLO_ELF}
-    DEPENDS hello_obj ${SRC_ROOT}/apps/hello/hello.ld
-    COMMENT "Linking hello.o -> hello.elf"
+            -T ${SRC_ROOT}/apps/snake/snake.ld
+            ${CMAKE_BINARY_DIR}/snake.o
+            -o ${SNAKE_ELF}
+    DEPENDS snake_obj ${SRC_ROOT}/apps/snake/snake.ld
+    COMMENT "Linking snake.o -> snake.elf"
 )
+add_custom_target(snake_elf ALL DEPENDS ${SNAKE_ELF})
 
-add_custom_target(hello_elf ALL DEPENDS ${HELLO_ELF})
+
+#
+# --- Build test.elf user program ---
+#
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/test.o
+    COMMAND ${CMAKE_C_COMPILER}
+            -m32 -ffreestanding -fno-pic -fno-stack-protector
+            -nostdlib -nostartfiles -nodefaultlibs
+            -I${CMAKE_SOURCE_DIR}/include
+            -c ${TEST_SRC}
+            -o ${CMAKE_BINARY_DIR}/test.o
+    DEPENDS ${TEST_SRC}
+    COMMENT "Compiling test.c -> test.o"
+)
+add_custom_target(test_obj ALL DEPENDS ${CMAKE_BINARY_DIR}/test.o)
+
+add_custom_command(
+    OUTPUT ${TEST_ELF}
+    COMMAND ${LD_EXE}
+            -m elf_i386
+            -T ${SRC_ROOT}/apps/test/test.ld
+            ${CMAKE_BINARY_DIR}/test.o
+            -o ${TEST_ELF}
+    DEPENDS test_obj ${SRC_ROOT}/apps/test/test.ld
+    COMMENT "Linking test.o -> test.elf"
+)
+add_custom_target(test_elf ALL DEPENDS ${TEST_ELF})
 
 
 #
@@ -165,15 +194,13 @@ add_custom_target(hello_elf ALL DEPENDS ${HELLO_ELF})
 #
 add_custom_command(
     OUTPUT ${OS_IMG}
-    DEPENDS ${BOOT_BIN} ${KERNEL_BIN} ${HELLO_ELF}
+    DEPENDS ${BOOT_BIN} ${KERNEL_BIN} ${SNAKE_ELF} ${TEST_ELF}
     COMMAND ${CMAKE_COMMAND} -E rm -f ${OS_IMG}
     COMMAND powershell -ExecutionPolicy Bypass -NoProfile
-            -File "${CMAKE_SOURCE_DIR}/scripts/make_image.ps1"
-            "${BOOT_BIN}" "${KERNEL_BIN}" "${HELLO_ELF}" "${OS_IMG}"
-    COMMENT "Creating bootable OS image (with hello.elf)"
+        -File "${CMAKE_SOURCE_DIR}/scripts/make_image.ps1"
+    COMMENT "Creating bootable OS image (with snake.elf & test.elf)"
 )
 add_custom_target(os-image ALL DEPENDS ${OS_IMG})
-
 
 #
 # --- 8. QEMU run convenience target ---
