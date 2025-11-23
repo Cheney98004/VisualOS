@@ -11,17 +11,31 @@ uint16_t fs_current_dir_cluster() {
     return fat16_get_cwd();
 }
 
-void fs_list() {
-    char names[64][13];
-    int n = fat16_list_dir(fat16_get_cwd(), names, 64);
+void fs_list(int printHideFiles) {
+    Fat16DirEntry entries[256];
+    int n = fat16_load_directory(fs_current_dir_cluster(), entries, 256);
 
     for (int i = 0; i < n; i++) {
-        if (names[i][0] != '\0')    // 只印非空 entry
-            terminal_write_line(names[i]);
+        Fat16DirEntry *e = &entries[i];
+
+        if (e->name[0] == 0x00) break;
+        if (e->name[0] == 0xE5) continue;
+        if (e->attr == FAT16_ATTR_LFN) continue;
+
+        char type = (e->attr & FAT16_ATTR_DIRECTORY) ? 'd' : '-';
+
+        uint8_t mode = e->flags;
+
+        char name[13];
+        fat16_decode_name(name, e->name);
+
+        if ((mode & PERM_H) && !printHideFiles) continue;
+        terminal_write(name);
+        terminal_putc('\n');
     }
 }
 
-void fs_list_long() {
+void fs_list_long(int printHideFiles) {
     Fat16DirEntry entries[256];
     int n = fat16_load_directory(fs_current_dir_cluster(), entries, 256);
 
@@ -49,6 +63,8 @@ void fs_list_long() {
 
         char name[13];
         fat16_decode_name(name, e->name);
+
+        if ((mode & PERM_H) && !printHideFiles) continue;
 
         terminal_putc(type);
         terminal_putc(r);

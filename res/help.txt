@@ -1,0 +1,16 @@
+VisualOS Help
+============
+
+Commands:
+  help             - Show this help
+  ls [-l] [-a]     - List directory
+  pwd              - Show current directory
+  cat <file>       - Display file contents
+  touch <file>     - Create empty file
+  write <f> <t>    - Write text into file
+  rm <file>        - Delete file
+  mkdir <dir>      - Create directory
+  cd <dir>         - Change directory
+  chmod [+/-rwxhsi] <file> - Change file flags
+  mem              - Show memory usage
+  clear            - Clear screen

@@ -4,6 +4,7 @@
 #include "terminal.h"
 #include "string.h"
 #include "fat16.h"
+#include "pmm.h"
 
 #define SHELL_BUF 128
 #define MAX_ARGS  16
@@ -59,10 +60,25 @@ static void cmd_help() {
 }
 
 static void cmd_ls(int argc, char **argv) {
-    if (argc > 1 && str_eq(argv[1], "-l")) {
-        fs_list_long();
+    int opt_long = 0;   // -l
+    int opt_all  = 0;   // -a
+
+    for (int i = 1; i < argc; i++) {
+        if (argv[i][0] == '-') {
+            const char *p = argv[i] + 1;
+
+            while (*p) {
+                if (*p == 'l') opt_long = 1;
+                else if (*p == 'a') opt_all = 1;
+                p++;
+            }
+        }
+    }
+
+    if (opt_long) {
+        fs_list_long(opt_all);
     } else {
-        fs_list();
+        fs_list(opt_all);
     }
 }
 
@@ -91,8 +107,10 @@ static void cmd_cat(int argc, char **argv) {
         return;
     }
 
-    for (uint32_t i = 0; i < r; i++)
+    for (uint32_t i = 0; i < r; i++) {
+        if (buf[i] == '\r') continue;
         terminal_putc(buf[i]);
+    }
 
     terminal_putc('\n');
 }
@@ -197,6 +215,13 @@ static void cmd_chmod(int argc, char **argv) {
         return;
     }
 
+    if (e.flags & PERM_I) {
+        terminal_error();
+        terminal_write("chmod: cannot modify immutable file: ");
+        terminal_write_line(filename);
+        return;
+    }
+
     while (*flags) {
         uint8_t bit = 0;
         switch (*flags) {
@@ -217,6 +242,16 @@ static void cmd_chmod(int argc, char **argv) {
     }
 
     fat16_set_entry(lba, index, &e);
+}
+
+static void cmd_mem() {
+    uint32_t total = pmm_total_frames() * 4;
+    uint32_t used = pmm_used_frames() * 4;
+    uint32_t free = pmm_free_frames() * 4;
+
+    terminal_printf(" total: %u KB\n", total);
+    terminal_printf(" used : %u KB\n", used);
+    terminal_printf(" free : %u KB\n", free);
 }
 
 // ---------------------------------------------------------
@@ -266,6 +301,7 @@ void shell_run() {
         else if (str_eq(argv[0], "cd"))      cmd_cd(argc, argv);
         else if (str_eq(argv[0], "clear"))   terminal_clear();
         else if (str_eq(argv[0], "chmod"))   cmd_chmod(argc, argv);
+        else if (str_eq(argv[0], "mem"))     cmd_mem();
 
         else {
             terminal_error();

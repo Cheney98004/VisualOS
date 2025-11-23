@@ -7,14 +7,24 @@ param(
 if (-not (Test-Path $BootBin)) { throw "Boot bin not found: $BootBin" }
 if (-not (Test-Path $KernelBin)) { throw "Kernel bin not found: $KernelBin" }
 
+# repo root
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+
+# fat16 builder script
 $scriptPath = Join-Path $repoRoot "fat16.py"
 if (-not (Test-Path $scriptPath)) {
     throw "fat16.py not found at $scriptPath"
 }
 
+# locate help.txt
+$helpPath = Join-Path $repoRoot "res/help.txt"
+if (-not (Test-Path $helpPath)) {
+    throw "help.txt not found at $helpPath"
+}
+
 Write-Host "Building FAT16 image via fat16.py"
-& python "$scriptPath" "$BootBin" "$KernelBin" "$OutputImg"
+& python "$scriptPath" "$BootBin" "$KernelBin" "$helpPath" "$OutputImg"
+
 if ($LASTEXITCODE -ne 0) {
     throw "fat16.py failed with exit code $LASTEXITCODE"
 }

@@ -5,8 +5,8 @@
 #include "fat16.h"
 
 void fs_init();
-void fs_list();
-void fs_list_long();
+void fs_list(int printHideFiles);
+void fs_list_long(int printHideFiles);
 int  fs_exists(const char *name);
 int  fs_delete(const char *name);
 int  fs_create(const char *name);

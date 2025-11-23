@@ -12,6 +12,8 @@ static uint16_t fatTable[65536];     // supports up to 65536 clusters
 static uint32_t rootDirStartLBA;
 static uint32_t dataStartLBA;
 
+
+// ============================================================
 static int fat16_find_entry(uint16_t dirCluster,
                             const char name83[11],
                             uint32_t *outLBA,
@@ -23,6 +25,8 @@ static void fat16_store_entry(uint32_t lba,
                               const Fat16DirEntry *entry);
 
 static uint16_t fat_next(uint16_t cl);
+// ============================================================
+
 
 // ============================================================
 //  Read sector helper
@@ -745,6 +749,7 @@ int fat16_create_file(const char *filename) {
     e.attr = FAT16_ATTR_ARCHIVE;
     e.cluster = 0;
     e.size = 0;
+    e.flags = PERM_R | PERM_W;
 
     return fat16_write_entry(currentDirCluster, &e);
 }

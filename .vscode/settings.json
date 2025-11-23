@@ -1,6 +1,7 @@
 {
     "files.associations": {
         "stddef.h": "c",
-        "terminal.h": "c"
+        "terminal.h": "c",
+        "stdint.h": "c"
     }
 }
