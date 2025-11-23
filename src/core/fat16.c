@@ -25,6 +25,8 @@ static void fat16_store_entry(uint32_t lba,
                               const Fat16DirEntry *entry);
 
 static uint16_t fat_next(uint16_t cl);
+
+int fat16_rename(const char *oldName, const char *newName);
 // ============================================================
 
 
@@ -569,6 +571,37 @@ int fat16_cd(const char *path) {
         return 0; // not a directory
 
     currentDirCluster = entries[idx].cluster;
+    return 1;
+}
+
+// ------------------------------------------------------------
+// Rename
+// ------------------------------------------------------------
+int fat16_rename(const char *oldName, const char *newName) {
+    char old83[11], new83[11];
+    fat16_format_83(old83, oldName);
+    fat16_format_83(new83, newName);
+
+    uint32_t lba;
+    int idx;
+    Fat16DirEntry e;
+
+    // find old entry
+    if (!fat16_find_entry(currentDirCluster, old83, &lba, &idx, &e))
+        return 0;
+
+    // name conflict
+    if (fat16_find_entry(currentDirCluster, new83, 0, 0, 0))
+        return 0;
+
+    // immutable cannot rename
+    if (e.flags & PERM_I)
+        return 0;
+
+    // apply new name
+    k_memcpy(e.name, new83, 11);
+    fat16_store_entry(lba, idx, &e);
+
     return 1;
 }
 

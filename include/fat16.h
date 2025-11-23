@@ -107,4 +107,6 @@ void fat16_protect_kernel();
 
 uint32_t fat16_entry_lba(uint16_t dirCluster, int entryIndex);
 
+int fat16_rename(const char *oldName, const char *newName);
+
 #endif

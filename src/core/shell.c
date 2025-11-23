@@ -254,6 +254,21 @@ static void cmd_mem() {
     terminal_printf(" free : %u KB\n", free);
 }
 
+static void cmd_rename(int argc, char **argv) {
+    if (argc < 3) {
+        terminal_error();
+        terminal_write_line("rename: usage: rename <old> <new>");
+        return;
+    }
+
+    if (!fs_rename(argv[1], argv[2])) {
+        terminal_error();
+        terminal_write("rename: cannot rename ");
+        terminal_write(argv[1]);
+        terminal_putc('\n');
+    }
+}
+
 // ---------------------------------------------------------
 // Prompt
 // ---------------------------------------------------------
@@ -302,6 +317,7 @@ void shell_run() {
         else if (str_eq(argv[0], "clear"))   terminal_clear();
         else if (str_eq(argv[0], "chmod"))   cmd_chmod(argc, argv);
         else if (str_eq(argv[0], "mem"))     cmd_mem();
+        else if (str_eq(argv[0], "rename"))   cmd_rename(argc, argv);
 
         else {
             terminal_error();

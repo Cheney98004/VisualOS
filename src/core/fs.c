@@ -113,6 +113,10 @@ int fs_cd(const char *dirname) {
     return fat16_cd(dirname);
 }
 
+int fs_rename(const char *oldDirName, const char *newDirName) {
+    return fat16_rename(oldDirName, newDirName);
+}
+
 int fs_get_entry(const char *name, Fat16DirEntry *outEntry, uint32_t *outLBA, int *outIndex) {
     uint16_t cwd = fs_current_dir_cluster();
 
