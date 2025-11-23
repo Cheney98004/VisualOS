@@ -2,6 +2,7 @@
     "files.associations": {
         "stddef.h": "c",
         "terminal.h": "c",
-        "stdint.h": "c"
+        "stdint.h": "c",
+        "fat16.h": "c"
     }
 }

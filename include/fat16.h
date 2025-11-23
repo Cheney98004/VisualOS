@@ -109,4 +109,6 @@ uint32_t fat16_entry_lba(uint16_t dirCluster, int entryIndex);
 
 int fat16_rename(const char *oldName, const char *newName);
 
+uint32_t fat16_read_partial(const char *filename, void *buffer, uint32_t size, uint32_t offset);
+
 #endif

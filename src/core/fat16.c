@@ -1021,3 +1021,70 @@ void fat16_get_path(char *out) {
 
     out[pos] = 0;
 }
+
+uint32_t fat16_read_partial(const char *filename, void *buffer, uint32_t size, uint32_t offset) {
+    char name83[11];
+    fat16_format_83(name83, filename);
+
+    uint32_t lba;
+    int idx;
+    Fat16DirEntry e;
+    if (!fat16_find_entry(currentDirCluster, name83, &lba, &idx, &e))
+        return 0;
+
+    uint32_t filesize = e.size;
+    if (offset >= filesize) return 0;
+
+    if (offset + size > filesize)
+        size = filesize - offset;
+
+    uint32_t readBytes = 0;
+    uint16_t cl = e.cluster;
+    uint32_t clusterSize = FAT16_SECTOR_SIZE * bpb.sectorsPerCluster;
+
+    // Skip clusters until offset is reached
+    uint32_t skip = offset / clusterSize;
+    uint32_t clusterOffset = offset % clusterSize;
+
+    while (skip-- && cl >= 2)
+        cl = fat_next(cl);
+
+    if (cl < 2) return 0;
+
+    uint8_t temp[FAT16_SECTOR_SIZE];
+
+    while (readBytes < size && cl >= 2) {
+        uint32_t lba_cluster = cluster_to_lba(cl);
+
+        for (uint8_t s = 0; s < bpb.sectorsPerCluster; s++) {
+            uint32_t remain = size - readBytes;
+            uint32_t copySize = FAT16_SECTOR_SIZE;
+
+            read_sector(lba_cluster + s, temp);
+
+            uint8_t *src = temp;
+
+            if (clusterOffset >= FAT16_SECTOR_SIZE) {
+                clusterOffset -= FAT16_SECTOR_SIZE;
+                continue;
+            }
+
+            if (clusterOffset) {
+                src += clusterOffset;
+                copySize -= clusterOffset;
+                clusterOffset = 0;
+            }
+
+            if (copySize > remain) copySize = remain;
+
+            k_memcpy((uint8_t*)buffer + readBytes, src, copySize);
+
+            readBytes += copySize;
+
+            if (readBytes >= size) break;
+        }
+        cl = fat_next(cl);
+    }
+
+    return readBytes;
+}

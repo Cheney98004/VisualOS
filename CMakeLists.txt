@@ -9,8 +9,6 @@ enable_language(ASM_NASM)
 #
 # --- 1. Toolchain: i686-elf-gcc ---
 #
-# 需要你已經安裝 https://github.com/lordmilko/i686-elf-tools/releases
-#
 set(CROSS_PREFIX i686-elf-)
 
 set(CMAKE_C_COMPILER ${CROSS_PREFIX}gcc)
@@ -46,7 +44,12 @@ set(KERNEL_SRC
     ${SRC_ROOT}/core/pmm.c
     ${SRC_ROOT}/core/ide.c
     ${SRC_ROOT}/core/fat16.c
+    ${SRC_ROOT}/core/elf_loader.c
 )
+
+# --- User apps ---
+set(HELLO_SRC ${SRC_ROOT}/apps/hello/hello.c)
+set(HELLO_ELF ${CMAKE_BINARY_DIR}/hello.elf)
 
 set(BOOT_BIN   ${CMAKE_BINARY_DIR}/boot.bin)
 set(KERNEL_ELF ${CMAKE_BINARY_DIR}/kernel.elf)
@@ -63,8 +66,6 @@ add_custom_command(
     DEPENDS ${BOOT_SRC}
     COMMENT "Generating boot.bin"
 )
-
-# 每次都重新 build boot.bin
 add_custom_target(force_boot ALL DEPENDS ${BOOT_BIN})
 
 
@@ -98,7 +99,7 @@ add_custom_target(kernel_obj ALL DEPENDS ${KERNEL_OBJS})
 
 
 #
-# --- 5. Link ELF kernel using ELF ld ---
+# --- 5. Link ELF kernel ---
 #
 add_custom_command(
     OUTPUT ${KERNEL_ELF}
@@ -127,17 +128,49 @@ add_custom_target(kernel_bin ALL DEPENDS ${KERNEL_BIN})
 
 
 #
+# --- Build hello.elf user program ---
+#
+# --- Build hello.o ---
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/hello.o
+    COMMAND ${CMAKE_C_COMPILER}
+            -m32 -ffreestanding -fno-pic -fno-stack-protector
+            -nostdlib -nostartfiles -nodefaultlibs
+            -I${CMAKE_SOURCE_DIR}/include
+            -c ${HELLO_SRC}
+            -o ${CMAKE_BINARY_DIR}/hello.o
+    DEPENDS ${HELLO_SRC}
+    COMMENT "Compiling hello.c -> hello.o"
+)
+
+add_custom_target(hello_obj ALL DEPENDS ${CMAKE_BINARY_DIR}/hello.o)
+
+# --- Link hello.elf ---
+add_custom_command(
+    OUTPUT ${HELLO_ELF}
+    COMMAND ${LD_EXE}
+            -m elf_i386
+            -T ${SRC_ROOT}/apps/hello/hello.ld
+            ${CMAKE_BINARY_DIR}/hello.o
+            -o ${HELLO_ELF}
+    DEPENDS hello_obj ${SRC_ROOT}/apps/hello/hello.ld
+    COMMENT "Linking hello.o -> hello.elf"
+)
+
+add_custom_target(hello_elf ALL DEPENDS ${HELLO_ELF})
+
+
+#
 # --- 7. Make bootable OS image ---
 #
 add_custom_command(
     OUTPUT ${OS_IMG}
-    DEPENDS ${BOOT_BIN} ${KERNEL_BIN}
+    DEPENDS ${BOOT_BIN} ${KERNEL_BIN} ${HELLO_ELF}
     COMMAND ${CMAKE_COMMAND} -E rm -f ${OS_IMG}
     COMMAND powershell -ExecutionPolicy Bypass -NoProfile
             -File "${CMAKE_SOURCE_DIR}/scripts/make_image.ps1"
-            "${BOOT_BIN}" "${KERNEL_BIN}" "${OS_IMG}"
-
-    COMMENT "Creating bootable OS image"
+            "${BOOT_BIN}" "${KERNEL_BIN}" "${HELLO_ELF}" "${OS_IMG}"
+    COMMENT "Creating bootable OS image (with hello.elf)"
 )
 add_custom_target(os-image ALL DEPENDS ${OS_IMG})
 

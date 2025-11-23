@@ -1,11 +1,13 @@
 param(
     [Parameter(Mandatory = $true)][string]$BootBin,
     [Parameter(Mandatory = $true)][string]$KernelBin,
+    [Parameter(Mandatory = $true)][string]$AppElf,
     [Parameter(Mandatory = $true)][string]$OutputImg
 )
 
 if (-not (Test-Path $BootBin)) { throw "Boot bin not found: $BootBin" }
 if (-not (Test-Path $KernelBin)) { throw "Kernel bin not found: $KernelBin" }
+if (-not (Test-Path $AppElf))    { throw "App ELF not found: $AppElf" }
 
 # repo root
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
@@ -23,7 +25,13 @@ if (-not (Test-Path $helpPath)) {
 }
 
 Write-Host "Building FAT16 image via fat16.py"
-& python "$scriptPath" "$BootBin" "$KernelBin" "$helpPath" "$OutputImg"
+Write-Host "  Boot     = $BootBin"
+Write-Host "  Kernel   = $KernelBin"
+Write-Host "  App ELF  = $AppElf"
+Write-Host "  Help.txt = $helpPath"
+Write-Host "  Output   = $OutputImg"
+
+& python "$scriptPath" "$BootBin" "$KernelBin" "$helpPath" "$AppElf" "$OutputImg"
 
 if ($LASTEXITCODE -ne 0) {
     throw "fat16.py failed with exit code $LASTEXITCODE"

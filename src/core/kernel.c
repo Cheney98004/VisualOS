@@ -30,7 +30,7 @@ void kmain(void) {
     keyboard_flush_buffer();
 
     terminal_clear();
-    terminal_write_line("VisualOS v0.3 (FAT16 Mode)");
+    terminal_write_line("VisualOS v0.4 (FAT16 Mode)");
     terminal_write_line("");
 
     // ----------------------------------------------------

@@ -4,6 +4,7 @@ SECTIONS
 {
     /* Kernel 加載位置（bootloader 讀入到 0x10000） */
     . = 0x10000;
+    sys_write = 0x00080000;
 
     /* ---- TEXT ---- */
     .text :

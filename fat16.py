@@ -2,186 +2,254 @@
 import argparse
 import struct
 from pathlib import Path
+import math
 
-# =============================
-# FAT16 CONSTANTS
-# =============================
+# ===============================================================
+# FAT16 PARAMETERS
+# ===============================================================
 BYTES_PER_SECTOR = 512
 SECTORS_PER_CLUSTER = 1
 RESERVED_SECTORS = 1
 NUM_FATS = 2
 FAT_SIZE_SECTORS = 9
 ROOT_ENTRIES = 224
-TOTAL_SECTORS = 2880  # 1.44MB floppy
+TOTAL_SECTORS = 2880   # 1.44MB floppy
 
-ROOT_DIR_SECTORS = (ROOT_ENTRIES * 32 + (BYTES_PER_SECTOR - 1)) // BYTES_PER_SECTOR
+ROOT_DIR_SECTORS = (ROOT_ENTRIES * 32 + BYTES_PER_SECTOR - 1) // BYTES_PER_SECTOR
 DATA_START_SECTOR = RESERVED_SECTORS + NUM_FATS * FAT_SIZE_SECTORS + ROOT_DIR_SECTORS
 
+# ===============================================================
+# Helpers
+# ===============================================================
 
-def write_word(buf: bytearray, offset: int, value: int):
+def write_word(buf, offset, value):
     struct.pack_into("<H", buf, offset, value)
 
-
-def write_dword(buf: bytearray, offset: int, value: int):
+def write_dword(buf, offset, value):
     struct.pack_into("<I", buf, offset, value)
 
+def to_83(name: str):
+    """
+    Convert "hello.elf" → "HELLO   ELF"
+    """
+    name = name.upper()
+    if "." in name:
+        base, ext = name.split(".", 1)
+    else:
+        base, ext = name, ""
 
-def alloc_contiguous(fat: bytearray, start_cluster: int, cluster_count: int):
-    """Allocate a contiguous region of clusters in FAT."""
-    for i in range(cluster_count):
+    base = (base[:8]).ljust(8)
+    ext  = (ext[:3]).ljust(3)
+
+    return (base + ext).encode("ascii")
+
+def alloc_clusters(fat, start_cluster, clusters):
+    """Allocate a contiguous chain in FAT16."""
+    for i in range(clusters):
         curr = start_cluster + i
-        next_cluster = 0xFFFF if i == cluster_count - 1 else (curr + 1)
-        write_word(fat, curr * 2, next_cluster)
+        next = 0xFFFF if i == clusters - 1 else (curr + 1)
+        write_word(fat, curr * 2, next)
 
+def write_file_data(img, start_cluster, data):
+    """Write file data into the data region."""
+    offset = DATA_START_SECTOR * BYTES_PER_SECTOR + (start_cluster - 2) * BYTES_PER_SECTOR
+    img[offset:offset+len(data)] = data
 
 # ===============================================================
-# CREATE IMAGE
+# Directory entry builder
 # ===============================================================
-def create_image(boot_path: Path, kernel_path: Path, help_path: Path, output_img: Path):
 
-    # --------------------------
-    # Load binaries
-    # --------------------------
-    boot_bin = boot_path.read_bytes()
-    if len(boot_bin) != 512:
+def make_dir_entry(name83: bytes, attr: int, cluster: int, size: int):
+    e = bytearray(32)
+    e[0:11] = name83
+    e[11] = attr
+    write_word(e, 26, cluster)
+    write_dword(e, 28, size)
+    return e
+
+# ===============================================================
+# Main Image Builder
+# ===============================================================
+
+def create_image(boot_bin: Path,
+                 kernel_bin: Path,
+                 help_txt: Path,
+                 app_elf: Path,
+                 output_img: Path):
+
+    boot_bytes = boot_bin.read_bytes()
+    if len(boot_bytes) != 512:
         raise ValueError("Bootloader must be exactly 512 bytes.")
 
-    kernel_bin = kernel_path.read_bytes()
-    help_bin = help_path.read_bytes()
+    kernel_bytes = kernel_bin.read_bytes()
+    help_bytes   = help_txt.read_bytes()
+    app_bytes    = app_elf.read_bytes()
 
-    kernel_size = len(kernel_bin)
-    help_size = len(help_bin)
-
-    # Allocate full disk image buffer
+    # Allocate entire floppy
     img = bytearray(TOTAL_SECTORS * BYTES_PER_SECTOR)
-    img[0:512] = boot_bin
+    img[0:512] = boot_bytes
 
-    # --------------------------
-    # Build FAT table
-    # --------------------------
-    fat_table = bytearray(FAT_SIZE_SECTORS * BYTES_PER_SECTOR)
+    # FAT table
+    fat = bytearray(FAT_SIZE_SECTORS * BYTES_PER_SECTOR)
+    write_word(fat, 0, 0xFFF0)  # media descriptor
+    write_word(fat, 2, 0xFFFF)  # reserved
 
-    write_word(fat_table, 0, 0xFFF0)  # media descriptor
-    write_word(fat_table, 2, 0xFFFF)  # reserved
+    next_free_cluster = 2
 
-    next_free_cluster = 2  # cluster index starts at 2
-
-    # ------------------------------
-    # Allocate kernel clusters
-    # ------------------------------
-    kernel_clusters = (kernel_size + 511) // 512
-    start_kernel_cluster = next_free_cluster
-    alloc_contiguous(fat_table, start_kernel_cluster, kernel_clusters)
+    # =========================================================
+    # Allocate kernel
+    # =========================================================
+    kernel_clusters = math.ceil(len(kernel_bytes) / 512)
+    kernel_start_cluster = next_free_cluster
+    alloc_clusters(fat, kernel_start_cluster, kernel_clusters)
     next_free_cluster += kernel_clusters
 
-    # ------------------------------
-    # Allocate /ETC directory cluster
-    # ------------------------------
-    start_etc_cluster = next_free_cluster
-    alloc_contiguous(fat_table, start_etc_cluster, 1)
+    # =========================================================
+    # Allocate /ETC directory
+    # =========================================================
+    etc_cluster = next_free_cluster
+    alloc_clusters(fat, etc_cluster, 1)
     next_free_cluster += 1
 
-    # ------------------------------
-    # Allocate help.txt clusters
-    # ------------------------------
-    help_clusters = (help_size + 511) // 512
-    start_help_cluster = next_free_cluster
-    alloc_contiguous(fat_table, start_help_cluster, help_clusters)
+    # =========================================================
+    # Allocate help.txt under /ETC
+    # =========================================================
+    help_clusters = math.ceil(len(help_bytes) / 512)
+    help_start_cluster = next_free_cluster
+    alloc_clusters(fat, help_start_cluster, help_clusters)
     next_free_cluster += help_clusters
 
-    # ------------------------------
-    # Write FAT copies
-    # ------------------------------
-    for fi in range(NUM_FATS):
-        off = (RESERVED_SECTORS + fi * FAT_SIZE_SECTORS) * BYTES_PER_SECTOR
-        img[off:off + len(fat_table)] = fat_table
+    # =========================================================
+    # Allocate /APPS directory
+    # =========================================================
+    apps_cluster = next_free_cluster
+    alloc_clusters(fat, apps_cluster, 1)
+    next_free_cluster += 1
 
-    # ===============================================================
-    # BUILD ROOT DIRECTORY
-    # ===============================================================
-    root_dir = bytearray(ROOT_DIR_SECTORS * BYTES_PER_SECTOR)
+    # =========================================================
+    # Allocate hello.elf under /APPS
+    # =========================================================
+    app_clusters = math.ceil(len(app_bytes) / 512)
+    app_start_cluster = next_free_cluster
+    alloc_clusters(fat, app_start_cluster, app_clusters)
+    next_free_cluster += app_clusters
 
-    # Entry 0: KERNEL.BIN
-    root_dir[0:11] = b"KERNEL  BIN"
-    root_dir[11] = 0x20
-    write_word(root_dir, 26, start_kernel_cluster)
-    write_dword(root_dir, 28, kernel_size)
+    # =========================================================
+    # Write FAT tables
+    # =========================================================
+    for f in range(NUM_FATS):
+        offset = (RESERVED_SECTORS + f * FAT_SIZE_SECTORS) * BYTES_PER_SECTOR
+        img[offset:offset+len(fat)] = fat
 
-    # Root entry: ETC directory
-    root_dir[32:40] = b"ETC     "   # name (8 bytes)
-    root_dir[40:43] = b"   "        # ext  (3 bytes)
-    root_dir[43] = 0x10             # directory attribute
-    write_word(root_dir, 32+26, start_etc_cluster)
-    write_dword(root_dir, 32+28, 0)
+    # =========================================================
+    # Build root directory
+    # =========================================================
+    root = bytearray(ROOT_DIR_SECTORS * BYTES_PER_SECTOR)
 
-    # write root directory to image
-    root_start = (RESERVED_SECTORS + NUM_FATS * FAT_SIZE_SECTORS) * BYTES_PER_SECTOR
-    img[root_start:root_start + len(root_dir)] = root_dir
+    # File 1: KERNEL.BIN
+    root[0:32] = make_dir_entry(
+        to_83("KERNEL.BIN"),
+        0x20,
+        kernel_start_cluster,
+        len(kernel_bytes)
+    )
 
-    # --------------------------
-    # Build ETC directory (1 cluster = 512 bytes)
-    # --------------------------
+    # Directory 2: ETC
+    root[32:64] = make_dir_entry(
+        to_83("ETC"),
+        0x10,
+        etc_cluster,
+        0
+    )
+
+    # Directory 3: APPS
+    root[64:96] = make_dir_entry(
+        to_83("APPS"),
+        0x10,
+        apps_cluster,
+        0
+    )
+
+    # Write root
+    root_offset = (RESERVED_SECTORS + NUM_FATS * FAT_SIZE_SECTORS) * BYTES_PER_SECTOR
+    img[root_offset:root_offset+len(root)] = root
+
+    # =========================================================
+    # Build ETC directory (1 cluster)
+    # =========================================================
     etc_dir = bytearray(512)
 
     # "."
-    etc_dir[0:8] = b".       "
-    etc_dir[8:11] = b"   "
-    etc_dir[11] = 0x10
-    write_word(etc_dir, 26, start_etc_cluster)
+    etc_dir[0:32] = make_dir_entry(to_83("."), 0x10, etc_cluster, 0)
 
     # ".."
-    etc_dir[32:40] = b"..      "
-    etc_dir[40:43] = b"   "
-    etc_dir[43] = 0x10
-    write_word(etc_dir, 32+26, 0)
+    etc_dir[32:64] = make_dir_entry(to_83(".."), 0x10, 0, 0)
 
     # HELP.TXT
-    etc_dir[64:72] = b"HELP    "
-    etc_dir[72:75] = b"TXT"
-    etc_dir[75] = 0x20
-    write_word(etc_dir, 64+26, start_help_cluster)
-    write_dword(etc_dir, 64+28, help_size)
+    etc_dir[64:96] = make_dir_entry(
+        to_83("HELP.TXT"),
+        0x20,
+        help_start_cluster,
+        len(help_bytes)
+    )
 
-    # Write ETC directory cluster
-    etc_offset = DATA_START_SECTOR * 512 + (start_etc_cluster - 2) * 512
-    img[etc_offset:etc_offset + 512] = etc_dir
+    etc_offset = DATA_START_SECTOR * 512 + (etc_cluster - 2) * 512
+    img[etc_offset:etc_offset+512] = etc_dir
 
-    # ===============================================================
-    # Write Kernel file data
-    # ===============================================================
-    kernel_offset = DATA_START_SECTOR * 512 + (start_kernel_cluster - 2) * 512
-    img[kernel_offset:kernel_offset + kernel_size] = kernel_bin
+    # =========================================================
+    # Build APPS directory (1 cluster)
+    # =========================================================
+    apps_dir = bytearray(512)
 
-    # ===============================================================
-    # Write help.txt data
-    # ===============================================================
-    help_offset = DATA_START_SECTOR * 512 + (start_help_cluster - 2) * 512
-    img[help_offset:help_offset + help_size] = help_bin
+    apps_dir[0:32] = make_dir_entry(to_83("."), 0x10, apps_cluster, 0)
+    apps_dir[32:64] = make_dir_entry(to_83(".."), 0x10, 0, 0)
 
-    # ===============================================================
-    # Save disk image
-    # ===============================================================
+    apps_dir[64:96] = make_dir_entry(
+        to_83(app_elf.name),
+        0x20,
+        app_start_cluster,
+        len(app_bytes)
+    )
+
+    apps_offset = DATA_START_SECTOR * 512 + (apps_cluster - 2) * 512
+    img[apps_offset:apps_offset+512] = apps_dir
+
+    # =========================================================
+    # Write file data
+    # =========================================================
+    write_file_data(img, kernel_start_cluster, kernel_bytes)
+    write_file_data(img, help_start_cluster, help_bytes)
+    write_file_data(img, app_start_cluster, app_bytes)
+
+    # =========================================================
+    # Save image
+    # =========================================================
     output_img.write_bytes(img)
 
-    print(f"Created FAT16 image: {output_img}")
-    print(f" - KERNEL.BIN cluster {start_kernel_cluster}, size={kernel_size}")
-    print(f" - ETC directory cluster {start_etc_cluster}")
-    print(f" - /ETC/help.txt cluster {start_help_cluster}, size={help_size}")
-
+    print("Created FAT16 image:", output_img)
+    print(f" - KERNEL.BIN at cluster {kernel_start_cluster}")
+    print(f" - /ETC/help.txt at cluster {help_start_cluster}")
+    print(f" - /APPS/{app_elf.name} at cluster {app_start_cluster}")
+    print("Done!")
 
 # ===============================================================
 # MAIN
 # ===============================================================
+
 def main():
-    parser = argparse.ArgumentParser(description="FAT16 Image Builder (kernel + /ETC/help.txt)")
+    parser = argparse.ArgumentParser(description="FAT16 Image Builder")
     parser.add_argument("boot_bin", type=Path)
     parser.add_argument("kernel_bin", type=Path)
     parser.add_argument("help_txt", type=Path)
+    parser.add_argument("app_elf", type=Path)
     parser.add_argument("output_img", type=Path)
     args = parser.parse_args()
 
-    create_image(args.boot_bin, args.kernel_bin, args.help_txt, args.output_img)
-
+    create_image(args.boot_bin,
+                 args.kernel_bin,
+                 args.help_txt,
+                 args.app_elf,
+                 args.output_img)
 
 if __name__ == "__main__":
     main()

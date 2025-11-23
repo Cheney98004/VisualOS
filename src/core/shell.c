@@ -5,6 +5,7 @@
 #include "string.h"
 #include "fat16.h"
 #include "pmm.h"
+#include "elf.h"
 
 #define SHELL_BUF 128
 #define MAX_ARGS  16
@@ -269,6 +270,30 @@ static void cmd_rename(int argc, char **argv) {
     }
 }
 
+static void cmd_exec(int argc, char **argv) {
+    if (argc < 2) {
+        terminal_error();
+        terminal_write_line("exec: missing file");
+        return;
+    }
+
+    const char *filename = argv[1];
+
+    terminal_write("Loading ");
+    terminal_write_line(filename);
+
+    int ok = elf_load(filename);
+
+    if (!ok) {
+        terminal_error();
+        terminal_write("exec: failed to load ");
+        terminal_write_line(filename);
+        return;
+    }
+
+    terminal_write_line("[program exited]");
+}
+
 // ---------------------------------------------------------
 // Prompt
 // ---------------------------------------------------------
@@ -317,7 +342,8 @@ void shell_run() {
         else if (str_eq(argv[0], "clear"))   terminal_clear();
         else if (str_eq(argv[0], "chmod"))   cmd_chmod(argc, argv);
         else if (str_eq(argv[0], "mem"))     cmd_mem();
-        else if (str_eq(argv[0], "rename"))   cmd_rename(argc, argv);
+        else if (str_eq(argv[0], "rename"))  cmd_rename(argc, argv);
+        else if (str_eq(argv[0], "exec"))    cmd_exec(argc, argv);
 
         else {
             terminal_error();
