@@ -1,5 +1,5 @@
 #include "syscall.h"
 
 void _start(void) {
-    syscalls->print("Test\n");
+    syscalls->create_file("test.txt");
 }

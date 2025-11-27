@@ -1,10 +1,15 @@
 #pragma once
 
 typedef struct {
+    // Terminal
     void (*print)(const char*);
     int  (*read_key)();
     void (*terminal_clear)();
     
+    // File System
+    void (*list_files)(int);
+    int (*create_file)(const char*);
+
     void (*exit)();
 } Syscalls;
 
